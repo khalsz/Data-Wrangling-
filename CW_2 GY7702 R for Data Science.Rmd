@@ -1,0 +1,349 @@
+---
+title: "CW_2 GY7702 R for Data Science"
+author: 'Student Number: 219031729'
+date: "1/5/2022"
+output:
+  html_document:
+    df_print: paged
+  pdf_document: default
+urlcolor: blue
+---
+
+# Introduction
+# GY7702 R for Data Science Course Work 2
+```{r Libraries, setup, message=FALSE, warning=FALSE}
+library(dplyr)
+library(tidyverse)
+library(knitr)
+library(readr)
+library(lubridate)
+library(ggplot2)
+library(psych)
+library(Hmisc)
+library(corrplot)
+library(PerformanceAnalytics)
+library(car)
+library(magrittr)
+library(lmtest)
+```
+
+### 1.0 Loading and selecting data needed for analysis
+Note: The variables for this analysis are encoded, see appendix 2 for full description of 
+the variables. 
+```{r Loading for analysis, setup, message=FALSE, warning=FALSE}
+#Loading in data for analysis
+OAC_Raw_uVariables_2011 <- 
+  read.csv("GY7702_2021-22_Assignment_2_v1-1_datapack/2011_OAC_Raw_uVariables-GY7702_2021-22_CW2.csv")
+
+#Loading data that would be used to extract my Output Area
+LAD_Allocation_data <- read.csv("GY7702_2021-22_Assignment_2_v1-1_datapack/new.csv")
+
+#Filtering out my allocated LAD
+LAD_Allocation_data <- LAD_Allocation_data %>%
+  filter(LAD11CD == "E09000006")
+
+#Joining the two data to select my allocated Output Area only
+OwnLadd <- LAD_Allocation_data   %>%
+  left_join(
+    OAC_Raw_uVariables_2011,  by = c("OA11CD" = "OA")
+  ) %>%
+  select(- c(LSOA11CD, LSO11ANM, MSOA11CD, MSOA11NM, LAD11CD, LAD11NM, LAD11NMW))
+
+#Selecting variables needed for Analysis
+explorData <- OwnLadd %>%
+  select( u104:u115, u159:u167)
+
+```
+
+### 1.1 Exploratory analysis of the data 
+```{r}
+describe(explorData,skew=TRUE, IQR = TRUE)
+
+
+```
+
+For each variable, the function ```describe() ``` in 1.1 shows the number of observation in the ```explorData``` dataframe; the number of missing observations; the number of distinct observation; how continuous the data is; the mean; the ```Gini's mean difference(GMD)``` which shows the data variability and underlying distribution (the mean absolute difference between variables); the percentile ```(5th, 10th, 25th, 50th, 75th, 90th, 95th)```; the five lowest and five highest. The statistics shows that all the variables have no missing value, and non of the veariables have 100% distinct observations.  
+
+
+
+### 1.11 Showing the structure of the data 
+```{r}
+
+str(explorData) %>%
+  knitr::kable()
+
+```
+
+This shows that the data is a dataframe which has **21 variables and 1020 observations**
+All the variables are of integer types except variable ```u104(Day-to-day activities)```.
+
+### 1.12 Visualizing the distribution of the data with Histogram and QQ plot
+```{r}
+
+par(mar=c(5,5,3,0)) ##This margin command should do the trick
+
+explorData %>% gather() %>%
+  ggplot2::ggplot(
+    aes(
+      x = value
+    )
+  )+ 
+  ggplot2:: geom_histogram(binwidth = 5)  +
+  facet_wrap(~key, scales = 'free_x')
+
+hist.data.frame(explorData)
+
+for (i in 1:ncol(explorData)) {
+ plt <-  ggplot2::ggplot(explorData, 
+    aes(
+      sample = explorData[,i]
+    )
+  ) +
+    ggplot2::stat_qq() +
+    ggplot2::stat_qq_line()+ 
+   ggplot2::xlab(colnames( explorData[i]))
+ print(plt)
+
+}
+
+```
+
+The result from the histogram shows that non of the variables are perfectly normally distributed. However, variables ```u112, u105, u106, u162``` are close to being normally distributed.
+
+### 1.13 Tranforming the data with Inverse hyperbolic sine function
+```{r}
+
+for (i in 1:ncol(explorData)) {
+ plt <-  ggplot2::ggplot(explorData, 
+    aes(
+      #adding inverse hyperbolic sine function
+      sample = asinh(explorData[,i])
+    )
+  ) +
+    ggplot2::stat_qq() +
+    ggplot2::stat_qq_line()+ 
+   ggplot2::xlab(colnames( explorData[i]))
+ print(plt)
+
+}
+
+```
+
+After transforming the transformed data (with inverse hyperbolic sine), the situation did not improve. Considering that plots are not the most accurate way of checking the normally of variables, we opted for statistical methods. 
+
+### 1.21 Statistical approach to exploratory analysis and descriptive statistics of the data
+
+```{r}
+
+stat_view <- explorData  %>%
+  pastecs::stat.desc(norm = TRUE) %>%
+  round(5)
+
+print(stat_view) 
+
+```
+
+Since the number of observation for each variable is greater than 1000, I chose 0.01 and the significance level. 
+
+```1.21``` various statistics including the *mean, median, standard error, and more. We are more interested in the Skewness, skew.2SE, Kurtosis, kurt.2SE and normtest.p* value for each of the variables. According to the result of the statistics, the skewness and kurtosis for all the variables are not equal to zero; hence, they are not normally distributed. All the variables are positively skewed, hence, skewed to the right. Meanwhile, two variable ```u110 (Provides unpaid care) and u112 ( Level 1, Level 2 or Apprenticeship)``` have flat distribution according to the kurtosis result while the remaining are heavy tailed. 
+
+According to the result from the ```stat.desc statistics```, all the variables have ```skew.2SE``` values greater than **1.29 and less than -1.29**; hence, all the results of the skewness are significant. Nevertheless, not all all variables have ```kurt.2SE``` result greater than **1.29 or less than -1.29**, thus making kurtosis result for variables ```u110, u112, u113, u114, u162, and u166``` not significant. 
+Meanwhile, the p-value for the Shapiro test for all the variables is less than 0.01 except variable ```u112```. This means than we will reject the null hypothesis that the distribution if normal for all the variables expect variable ```u112```; hence, variable ```u112``` is normally distributed. 
+
+
+### 1.3 Kendall's regression correlation plot
+```{r}
+
+corrplot(cor(explorData, method = "kendall"), type = "upper", 
+         tl.cex=0.5, method = 'shade', order = 'AOE', 
+         diag = FALSE,  tl.col="black")
+
+```
+
+Since we know that non of the variables are normally distributed and all the variables have duplication, according to ```1.1``` result, we cannot use Pearson and Spearman's correlation, hence; hence we used the Kendall's correlation
+The correlation plot for all the 21 variables. It was ordered in such a way to create cluster based on the correlation value. The negatively correlated variables are at the top right corner of the chart, (brown shaded color) while the uncorrelated are in the middle (white color), and the highly correlated variables fill the remaining place.
+
+### 2.0 Part 2
+### 2.11 Selecting the data needed for the regression analysis
+```{r}
+regression_data <- OwnLadd %>%
+  select( Total_Population, u104:u115, u159:u167) %>%
+#converting each column to represent percentage of population
+  mutate(
+    across(u104:u167, 
+           function(x){
+             (x/Total_Population)*100
+           })
+  ) %>%
+  #renaming the variables
+  rename_with(
+     function(x){paste('perc', x, sep = "_")}, 
+     u104:u167
+  )
+
+```
+
+### 2.12 Checking the normality of the variables after normalizing them with percentage population
+```{r}
+stat_view2 <- regression_data  %>%
+  pastecs::stat.desc(norm = TRUE) %>%
+  round(5)
+print(stat_view2)
+
+
+```
+
+Variables ```u162, u112, u113, and u106``` are normally distributed after normalizing the data. The p-value of the aforementioned four variables is greater than ```0.01```; hence we can reject the null hypothesis that they are nort normally distributed. Nevertheless, the others variables have ```p-values``` less than ```0.01```; hence we accept the null hypothesis -normally distributed.
+
+### 2.13 Selecting the variable to be used for the regression analysis
+How main focus is to check the relationship between variable ```perc_u106``` (percentage of people with good Health), ```perc_u112```(percentage of people with Level 1, Level 2 or Apprenticeship qualifications) and ```perc_u162```(percentage of people with Administrative and secretarial occupations). The two independent variables ```perc_u112 and perc_u162```were chosen because they are normally distributed and they are likely uncorrelated. 
+```{r}
+
+forregression <- regression_data %>%
+  select(perc_u106, perc_u112, perc_u162)
+
+```
+
+Since the three variables ```perc_u106```(percentage of people with good health), ```perc_u112``` (percentage of people with Level 1, Level 2 or Apprenticeship qualifications) and ```perc_u162``` () meet the assumptions of Pearson correlation, we will run a pearson correlation
+
+### 2.21 Pearson correlation between variable perc_u106 and perc_u112
+
+```{r}
+
+forregression %$%
+cor.test(perc_u106, perc_u112)
+
+```
+
+```2.21``` shows the result of the correlation between the percentage of people with good health and the percentage of people with Level 1, Level 2 or Apprenticeship qualifications. According to the result, we reject the null hypothesis that there is no correlation between the two variables ```perc_u106 and perc_u112``` since the p-value is less than 0.01; hence, there is relationship between the two variables. The correlation is positive since the ```cor``` value is **0.1139368**. However, the correlation is very weak as the two variables share only **1.2% variability**. 
+
+
+### 2.22 Pearson regression between variables perc_u106 and perc_u162
+```{r}
+forregression %$%
+  cor.test( perc_u106, perc_u162)
+
+```
+
+```2.22``` shows the result of the correlation between the percentage of people with good health and the percentage of people with Administrative and secretarial occupations. According to the result, we reject the null hypothesis that there is no correlation between the two variables ```perc_u106 and perc_u162``` since the p-value is less than 0.01; hence, there is relationship between the two varialble. The correlation is positive since the ```cor``` value is **0.1097601**. However, the correlation is very weak as the two variables share only **1.2% variability**. 
+
+
+### 2.31 Regression analysis between variable perc_u106 (dependent) ~ perc_u114 + perc_u165(Independent)
+```{r}
+
+health_model <- forregression %$%
+  lm(perc_u106 ~ perc_u112 + perc_u162)
+
+```
+
+Percentage Population with good Health = (Percentage with level 4 qualification + Percentage doing customer service occupation) + error. 
+
+#2.32 Summary of the model
+```{r}
+summary(health_model)
+
+```
+The summary of the model indicates that: 
+
+- The p-value is **0.00001625: p-value < 0.01**; Hence the model is significant. We can reject the null hypothesis that none of the predictors have relationship with the response variable. 
+  * This result is gotten by comparing the ```F-statistic to F distribution``` **11.15** where the ```degrees of freedom``` is **(2, 1017)**
+  * F (2, 1017) = **11.15**
+  * Adjusted R-squared = **0.01953** 
+
+- Coefficient 
+  * the coefficient  = **30.79670 (significant)**
+  * The coefficient of slope for % of people with with ```Level 1, Level 2 or Apprenticeship qualifications``` is estimated as **0.08282 (significant)**
+  * The coefficient of slope for % of people with with ```Administrative and secretarial occupations``` is estimated as **0.16799 (Significant)**
+
+### 2.4 Test for normality, homoscedasticity, independence and multocollinearity   
+```{r}
+
+# 2.41 Test for normality 
+health_model %>% 
+  stats::rstandard() %>% 
+  stats::shapiro.test()
+
+# 2.42 Test for homoscedasticity 
+health_model %>% 
+  lmtest::bptest()
+
+# 2.43 Test for independence 
+health_model %>%
+  lmtest::dwtest()
+
+# 2.43 Test for multocollinearity 
+health_model %>%
+  vif()
+
+```
+
+The output of the model indicates that the model fits **(F (2, 1017) = 11.15), p-Value < 0.01**. However, the model on the percentage of people with  ```Level 1, Level 2 or Apprenticeship qualifications``` and people with ```Administrative and secretarial occupations``` can only predict **2%** of people with ```good health```. The model have normally distributed residuals **(Shapiro-Wilk test, W=0.99, p=0.01678)**, no multicollinearity with average **VIF 1.028645**, the residuals satisfy the assumption of homoscedasticity **(Breusch-Pagan test, BP = 1.7153, p-value = 0.4242)** and assumptions of independence **(Durbin-Watson test, DW = 1.9789, p-value = 0.3613)**, However, we can say that the model is partially robust because of the low adjusted R-squared value. 
+Based on the result, the model indicates that for every one percent increase in the percentage of people with with ```Level 1, Level 2 or Apprenticeship qualifications```, there will be **0.08282** increase in the percentage of people with ```good health```. Similarly, for every one percent increase in the percentage of people with ```Administrative and secretarial occupations```, there will be **0.16799** increase in the percentage of people with ```good health```. 
+
+### 2.51 Residual vs Fitted plot
+```{r}
+health_model %>%
+  plot(which = c(1))
+
+```
+
+```2.51``` gives an insight into the ```homoskedasticity``` of the residual. Since the red line is close to the dash line, the linearity of the model seems to hold well, the model is ```homoskedastic``` as the variance is not increasing, and point ```770, 923 and 319``` are outliers. 
+
+### 2.52 Normal Q-Q plot
+```{r}
+
+health_model %>%
+  plot(which = c(2))
+
+```
+
+```2.52``` shows the normality of the residuals. The fact that the qq plot lies on the line shows that it is normally distributed.
+
+### 2.53 Residual vs Leverage plot
+```{r}
+health_model %>%
+  plot(which = c(5))
+```
+
+```2.53``` gives insight about the ```Cook's distance```. No point fall outside the ```Cook's Distance```, indicating that there is no influential point in the regression model. 
+
+
+### Part 3
+### 3.1
+Thanks to the classes we had in the first and second part of this course, I was able to achieve this task with not so much difficulty. As suggested in the course, I first observed and visualize my data to understand the types of data I have using key functions like ``` describe(), str(), stat.desc(), histogram, ggplot and qqplot ```. I also tried to observe the relationship between the variables with correlation analysis before running a regression model. Afterwards, I tried to check the robusteness of my model with functions like ```shapiro.test(), vif(), bptest(), dwtest() ``` and more . All these helped me to achieve the task. We with known I had in the first part, the data predictability was quite straight forward with libraries like ``` dplyr, magrittr, tidyverse ``` and more. 
+
+
+
+## Reference
+1. Sthda.com. 2022. Correlation matrix : A quick start guide to analyze, format and visualize a correlation matrix using R software - Easy Guides - Wiki - STHDA. [online] Available at: <http://www.sthda.com/english/wiki/correlation-matrix-a-quick-start-guide-to-analyze-format-and-visualize-a-correlation-matrix-using-r-software> [Accessed 6 January 2022].
+2. Rdocumentation.org. 2022. describe function - RDocumentation. [online] Available at: <https://www.rdocumentation.org/packages/Hmisc/versions/4.6-0/topics/describe> [Accessed 6 January 2022].
+3. Medium. 2022. How to Create a Correlation Matrix with Too Many Variables in R. [online] Available at: <https://towardsdatascience.com/how-to-create-a-correlation-matrix-with-too-many-variables-309cc0c0a57> [Accessed 6 January 2022].
+4. Boostedml. 2022. Linear Regression Plots: Fitted vs Residuals - Boostedml. [online] Available at: <https://boostedml.com/2019/03/linear-regression-plots-fitted-vs-residuals.html> [Accessed 6 January 2022].
+5. Sabbata, S., 2022. Chapter 8 Regression analysis | R for Geographic Data Science. [online] Sdesabbata.github.io. Available at: <https://sdesabbata.github.io/r-for-geographic-data-science/regression-analysis.html> [Accessed 6 January 2022].
+
+
+## Appendix 
+1. This document includes information from public sector licensed under the [Open Government Licence v3.0](www.nationalarchives.gov.uk/doc/open-government-licence/version/3) from the [Office for National Statistics](www.ons.gov.uk).
+
+2. **VariableCode** | **VariableDescription**  
+  u104:     |    Day-to-day activities limited a lot or a little Standardised Illness Ratio  
+  u105:     |    Very good health  
+    u106:     |    Good health  
+    u107:     |   Fair health  
+    u108:      |   Bad health  
+    u109:       |  Very bad health  
+    u110:        | Provides unpaid care  
+    u111: |        No qualifications  
+    u112:  |       Highest level of qualification: Level 1, Level 2 or Apprenticeship  
+    u113:   |      Highest level of qualification: Level 3 qualifications  
+    u114:    |     Highest level of qualification: Level 4 qualifications and above  
+    u115:     |    Schoolchildren and full-time students: Age 16 and over  
+    u159:      |   Managers, directors and senior officials  
+    u160:       |  Professional occupations  
+    u161:        | Associate professional and technical occupations  
+    u162: |        Administrative and secretarial occupations  
+    u163:  |       Skilled trades occupations  
+    u164:   |      Caring, leisure and other service occupations  
+    u165:    |     Sales and customer service occupations  
+    u166:     |    Process, plant and machine operatives  
+    u167:      |   Elementary occupations
