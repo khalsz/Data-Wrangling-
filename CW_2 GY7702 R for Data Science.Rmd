@@ -33,10 +33,11 @@ the variables.
 ```{r Loading for analysis, setup, message=FALSE, warning=FALSE}
 #Loading in data for analysis
 OAC_Raw_uVariables_2011 <- 
-  read.csv("GY7702_2021-22_Assignment_2_v1-1_datapack/2011_OAC_Raw_uVariables-GY7702_2021-22_CW2.csv")
+  read.csv("/home/kal41/Practical_204/CW1/GY7702_2021-22_Assignment_2_v1-1_datapack/2011_OAC_Raw_uVariables-GY7702_2021-22_CW2.csv")
+
 
 #Loading data that would be used to extract my Output Area
-LAD_Allocation_data <- read.csv("GY7702_2021-22_Assignment_2_v1-1_datapack/new.csv")
+LAD_Allocation_data <- read.csv("/home/kal41/Practical_204/CW1/GY7702_2021-22_Assignment_2_v1-1_datapack/new.csv")
 
 #Filtering out my allocated LAD
 LAD_Allocation_data <- LAD_Allocation_data %>%
